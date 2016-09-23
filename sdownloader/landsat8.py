@@ -11,11 +11,19 @@ from .errors import RemoteFileDoesntExist, USGSInventoryAccessMissing
 
 logger = logging.getLogger('sdownloader')
 
+AMAZON_SERVICE = 'amazon'
+GOOGLE_CLOUD_SERVICE = 'gcloud'
+USGS_SERVICE = 'usgs'
+
+
+class Landsat8DownloaderException(Exception):
+    pass
+
 
 class Landsat8(S3DownloadMixin):
     """ Landsat8 downloader class """
 
-    _bandmap = {
+    _BAND_MAP = {
         'coastal': 1,
         'blue': 2,
         'green': 3,
@@ -25,8 +33,10 @@ class Landsat8(S3DownloadMixin):
         'swir2': 7,
         'pan': 8,
         'cirrus': 9,
-        'quality': 'BQA'
+        'quality': 'QA'
     }
+
+    _DEFAULT_BANDS = {'QA', 'MTL'}
 
     def __init__(self, download_dir, usgs_user=None, usgs_pass=None):
         self.download_dir = download_dir
@@ -40,66 +50,74 @@ class Landsat8(S3DownloadMixin):
 
     def _band_converter(self, bands=None):
         if bands:
-            for i, b in enumerate(bands):
-                try:
-                    bands[i] = self._bandmap[b]
-                except KeyError:
-                    pass
-        return bands
+            for band_name_or_id in bands:
+                yield self._BAND_MAP[band_name_or_id] if band_name_or_id in self._BAND_MAP else band_name_or_id
 
-    def download(self, scenes, bands=None):
+    def download(self, scenes, bands=None, service_chain=(AMAZON_SERVICE, GOOGLE_CLOUD_SERVICE, USGS_SERVICE)):
         """
-        Download scenese from Google Storage or Amazon S3 if bands are provided
+        Download scenes from Google Storage or Amazon S3 if bands are provided
         :param scenes:
             A list of scene IDs
         :type scenes:
-            List
+            Iterable
         :param bands:
             A list of bands. Default value is None.
         :type scenes:
             List
+        :param service_chain:
+            A list of service designators to be used for images downloading.
+            Also specifies the order.
+        :type service_chain:
+            Iterable
         :returns:
             (List) includes downloaded scenes as key and source as value (aws or google)
         """
-
-        bands = self._band_converter(bands)
-
         if isinstance(scenes, list):
             scene_objs = Scenes()
 
+            # Always grab MTL.txt and QA band if bands are specified
+            bands = self._DEFAULT_BANDS.union(self._band_converter(bands))
+
             for scene in scenes:
 
-                # for all scenes if bands provided, first check AWS, if the bands exist
-                # download them, otherwise use Google and then USGS.
-                try:
-                    # if bands are not provided, directly go to Goodle and then USGS
-                    if not isinstance(bands, list):
-                        raise RemoteFileDoesntExist
-                    # Always grab MTL.txt and QA band if bands are specified
-                    if 'BQA' not in bands:
-                        bands.append('QA')
-
-                    if 'MTL' not in bands:
-                        bands.append('MTL')
-
-                    scene_objs.merge(self.s3([scene], bands))
-
-                except RemoteFileDoesntExist:
+                for service_designator in service_chain:
                     try:
-                        scene_objs.merge(self.google([scene]))
+                        if service_designator == AMAZON_SERVICE:
+                            if bands == self._DEFAULT_BANDS:
+                                continue
+
+                            scene_objs.merge(self.s3([scene], bands))
+                        elif service_designator == GOOGLE_CLOUD_SERVICE:
+                            scene_objs.merge(self.google([scene]))
+                        elif service_designator == USGS_SERVICE:
+                            scene_objs.merge(self.usgs([scene]))
+                        else:
+                            raise Landsat8DownloaderException(
+                                '{} - service designator is not supported'.format(service_designator)
+                            )
+                        break
                     except RemoteFileDoesntExist:
-                        scene_objs.merge(self.usgs([scene]))
+                        pass
+                else:
+                    raise RemoteFileDoesntExist
 
             return scene_objs
 
-        else:
-            raise Exception('Expected sceneIDs list')
+        raise ValueError('Expected sceneIDs list')
 
     def usgs(self, scenes):
-        """ Downloads the image from USGS """
+        """
+        Downloads the image from USGS
+        :param scenes:
+            A collection of scene IDs
+        :type scenes:
+            Iterable
+        :returns
+            Downloaded scenes wrapper
+        """
 
         if not isinstance(scenes, list):
-            raise Exception('Expected sceneIDs list')
+            raise ValueError('Expected sceneIDs list')
 
         scene_objs = Scenes()
 
@@ -129,20 +147,16 @@ class Landsat8(S3DownloadMixin):
     def google(self, scenes):
         """
         Google Storage Downloader.
-        :param scene:
-            The scene id
-        :type scene:
-            List
-        :param path:
-            The directory path to where the image should be stored
-        :type path:
-            String
+        :param scenes:
+            A collection of scene IDs
+        :type scenes:
+            Iterable
         :returns:
-            Boolean
+            Downloaded scenes wrapper
         """
 
         if not isinstance(scenes, list):
-            raise Exception('Expected sceneIDs list')
+            raise ValueError('Expected sceneIDs list')
 
         scene_objs = Scenes()
         logger.info('Source: Google Storge')

@@ -9,7 +9,7 @@ logger = logging.getLogger('sdownloader')
 class Sentinel2(S3DownloadMixin):
     """ Sentinel2 downloader class """
 
-    _bandmap = {
+    _BAND_MAP = {
         'coastal': 1,
         'blue': 2,
         'green': 3,
@@ -31,7 +31,7 @@ class Sentinel2(S3DownloadMixin):
         if bands:
             for i, b in enumerate(bands):
                 try:
-                    bands[i] = self._bandmap[b]
+                    bands[i] = self._BAND_MAP[b]
                 except KeyError:
                     pass
         return bands

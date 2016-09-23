@@ -18,7 +18,7 @@ class Tests(unittest.TestCase):
         self.scene_2 = 'LC82050312014229LGN00'
         self.scene_s3 = 'LC80010092015051LGN00'
         self.scene_s3_2 = 'LC82050312015136LGN00'
-        self.scene_size = 59204484
+        self.scene_size = 59239149
 
     def tearDown(self):
         try:
