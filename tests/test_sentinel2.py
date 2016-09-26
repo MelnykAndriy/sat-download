@@ -6,7 +6,6 @@ from tempfile import mkdtemp
 import mock
 
 from sdownloader.download import Scenes
-from sdownloader.common import sentinel_scene_interpreter
 from sdownloader.sentinel2 import Sentinel2
 
 
@@ -43,10 +42,10 @@ class Tests(unittest.TestCase):
         expected = 'tiles/56/W/NV/2016/5/30/0'
 
         scene = 'S2A_tile_20160530_56WNV_0'
-        self.assertEqual(sentinel_scene_interpreter(scene), expected)
+        self.assertEqual(Sentinel2.scene_interpreter(scene), expected)
 
         scene = 'S2A_OPER_MSI_L1C_TL_SGS__20160530T030406_A004890_T56WNV_N01.01'
-        self.assertEqual(sentinel_scene_interpreter(scene), expected)
+        self.assertEqual(Sentinel2.scene_interpreter(scene), expected)
 
     @mock.patch('sdownloader.download.fetch')
     def test_download_with_band_name(self, fake_fetch):

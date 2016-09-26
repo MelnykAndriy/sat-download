@@ -1,8 +1,5 @@
 import os
-import glob
 import logging
-import tarfile
-import subprocess
 
 from .common import remote_file_exists, check_create_folder, fetch
 
@@ -13,10 +10,7 @@ class Scene(object):
 
     def __init__(self, name, files=None):
         self.name = name
-        self.zipped = False
         self.files = []
-        self.zip_file = None
-        self.band_files = []
 
         if isinstance(files, str):
             self.add(files)
@@ -25,36 +19,7 @@ class Scene(object):
                 self.add(f)
 
     def add(self, f):
-        zip_formats = ['.gz', '.bz', '.bz2']
-        if os.path.splitext(os.path.basename(f))[-1] in zip_formats:
-            self.zipped = True
-            self.zip_file = f
-        else:
-            self.band_files.append(f)
         self.files.append(f)
-
-    def unzip(self, path=None):
-
-        if not path:
-            path = os.path.join(os.path.split(self.zip_file)[0], self.name)
-
-        if not self.zipped:
-            raise Exception('Scene does not have a zip file associated with it')
-        else:
-            try:
-                tar = tarfile.open(self.zip_file, 'r')
-                tar.extractall(path=path)
-                tar.close()
-            except tarfile.ReadError:
-                subprocess.check_call(['tar', '-xf', self.zip_file, '-C', path])
-
-            formats = ['*.tif', '*.TIF', '*.jp2']
-
-            for f in formats:
-                for image in glob.glob(os.path.join(path, f)):
-                    self.add(image)
-
-            self.zipped = False
 
     def __str__(self):
         return self.name
@@ -113,10 +78,6 @@ class Scenes(object):
     @property
     def scenes(self):
         return [s.name for s in self]
-
-    def unzip(self):
-        for i, scene in enumerate(self):
-            scene.unzip()
 
 
 class S3DownloadMixin(object):
