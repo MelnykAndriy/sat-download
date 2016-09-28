@@ -36,7 +36,7 @@ class Scenes(object):
     def __getitem__(self, key):
         if isinstance(key, int):
             return self.scenes_list[key]
-        elif isinstance(key, str):
+        elif isinstance(key, (str, unicode)):
             return self.scenes_dict[key]
         else:
             raise Exception('Key is not supported.')

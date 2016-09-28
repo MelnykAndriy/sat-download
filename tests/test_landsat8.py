@@ -16,8 +16,8 @@ class Tests(unittest.TestCase):
 
     def setUp(self):
         self.temp_folder = mkdtemp()
-        self.s3_scenes = ['LC80010092015051LGN00', 'LC82050312015136LGN00']
-        self.all_scenes = ['LC80010092015051LGN00', 'LC82050312015136LGN00', 'LT81360082013127LGN01',
+        self.s3_scenes = ['LC80010092015051LGN00', u'LC82050312015136LGN00']
+        self.all_scenes = ['LC80010092015051LGN00', u'LC82050312015136LGN00', u'LT81360082013127LGN01',
                            'LC82050312014229LGN00']
         self.scene_size = 59204484
 

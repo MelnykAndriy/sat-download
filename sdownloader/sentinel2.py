@@ -72,7 +72,7 @@ class Sentinel2(S3DownloadMixin):
         :param scene_name:
         :returns:
         """
-        assert isinstance(scene_name, str)
+        assert isinstance(scene_name, (str, unicode))
 
         try:
             if '/' in scene_name or 'tiles' in scene_name:

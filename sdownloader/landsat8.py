@@ -241,7 +241,7 @@ class Landsat8(S3DownloadMixin):
             'scene': scene_name
         }
 
-        if isinstance(scene_name, str) and len(scene_name) == 21:
+        if isinstance(scene_name, (str, unicode)) and len(scene_name) == 21:
             anatomy['path'] = scene_name[3:6]
             anatomy['row'] = scene_name[6:9]
             anatomy['sat'] = 'L' + scene_name[2:3]

@@ -62,7 +62,7 @@ def remote_file_exists(url):
 
 def remove_slash(value):
     """ Removes slash from beginning and end of a string """
-    assert isinstance(value, str)
+    assert isinstance(value, (str, unicode))
     return re.sub('(^\/|\/$)', '', value)
 
 
