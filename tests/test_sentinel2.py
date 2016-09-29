@@ -1,8 +1,10 @@
 import errno
+import os
 import shutil
 import unittest
 from tempfile import mkdtemp
 
+import datetime
 import mock
 
 from sdownloader.download import Scenes
@@ -28,10 +30,10 @@ class Tests(unittest.TestCase):
     def test_download_scene_name(self, fake_fetch):
         """ Test downloading from S3 for a given sceneID """
 
-        fake_fetch.return_value = 'file.tif'
+        fake_fetch.side_effect = self._fake_fetch
 
         l = Sentinel2(download_dir=self.temp_folder)
-        results = l.s3(self.scenes, [4, 3, 2])
+        results = l.download(self.scenes, [4, 3, 2])
 
         self.assertTrue(isinstance(results, Scenes))
 
@@ -51,7 +53,7 @@ class Tests(unittest.TestCase):
     def test_download_with_band_name(self, fake_fetch):
         """ Test downloading from S3 for a given sceneID with band names """
 
-        fake_fetch.return_value = 'file.tif'
+        fake_fetch.side_effect = self._fake_fetch
 
         l = Sentinel2(download_dir=self.temp_folder)
         results = l.download(self.scenes, ['red', 'green', 'blue'])
@@ -64,12 +66,39 @@ class Tests(unittest.TestCase):
     def test_download_path(self, fake_fetch):
         """ Test downloading from S3 for a given sceneID """
 
-        fake_fetch.return_value = 'file.tif'
+        fake_fetch.side_effect = self._fake_fetch
 
         l = Sentinel2(download_dir=self.temp_folder)
-        results = l.s3(self.paths, [4, 3, 2])
+        results = l.download(self.paths, [4, 3, 2])
 
         self.assertTrue(isinstance(results, Scenes))
 
         total = sum([len(s.files) for s in results])
         self.assertEqual(total, len(self.paths) * 3)
+
+    def test_parse_amazon_s3_path(self):
+        self.assertTupleEqual(
+            ('56', 'W', 'NV', datetime.date(2016, 5, 30), '0'),
+            Sentinel2.parse_amazon_s3_tile_path('tiles/56/W/NV/2016/5/30/0')
+        )
+        with self.assertRaises(ValueError):
+            Sentinel2.parse_amazon_s3_tile_path('56/W/NV/2016/5/30/0')
+
+    @mock.patch('sdownloader.download.fetch')
+    def test_override_relative_path(self, fake_fetch):
+        fake_fetch.side_effect = self._fake_fetch
+
+        l = Sentinel2(download_dir=self.temp_folder, relative_product_path_builder=self._custom_relative_path_builder)
+        results = l.download(self.paths[1:] + self.scenes[1:], [4, 3, 2])
+        self.assertTrue(isinstance(results, Scenes))
+
+        for scene in results:
+            for f in scene.files:
+                self.assertTrue(f.startswith(os.path.join(self.temp_folder, 'test/37/T/BG/2016-03-20/0/')))
+
+    def _custom_relative_path_builder(self, utm, lat, square, date, seq):
+        return os.path.join('test', utm, lat, square, str(date), seq)
+
+    def _fake_fetch(self, url, path):
+        return os.path.join(path, os.path.basename(url))
+

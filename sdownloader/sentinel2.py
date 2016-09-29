@@ -25,24 +25,31 @@ class Sentinel2(S3DownloadMixin):
         'swir2': 12
     }
 
-    def __init__(self, download_dir):
-        self.download_dir = download_dir
+    def __init__(self, download_dir, relative_product_path_builder=None):
+        self._download_dir = download_dir
+        self._relative_product_path_builder = relative_product_path_builder
 
         # Make sure download directory exist
         check_create_folder(self.download_dir)
 
+    @property
+    def download_dir(self):
+        return self._download_dir
+
+    def _relative_product_path(self, amazon_s3_path):
+        if self._relative_product_path_builder:
+            return self._relative_product_path_builder(*self.parse_amazon_s3_tile_path(amazon_s3_path))
+
+        return amazon_s3_path.replace('/', '_')
+
     def _band_converter(self, bands=None):
         if bands:
-            for i, b in enumerate(bands):
-                try:
-                    bands[i] = self._BAND_MAP[b]
-                except KeyError:
-                    pass
-        return bands
+            for band_name_or_id in bands:
+                yield self._BAND_MAP[band_name_or_id] if band_name_or_id in self._BAND_MAP else band_name_or_id
 
     def download(self, scenes, bands):
         """
-        Download scenese Amazon S3. Bands must be provided
+        Download scenes Amazon S3. Bands must be provided
 
         The scenes could either be a scene_id used by sentinel-api or a s3 path (e.g. tiles/34/R/CS/2016/3/25/0)
 
@@ -57,12 +64,54 @@ class Sentinel2(S3DownloadMixin):
         :returns:
             (List) includes downloaded scenes as key and source as value (aws or google)
         """
-        bands = self._band_converter(bands)
-
         if isinstance(scenes, list):
-            return self.s3(scenes, bands)
+            return self.s3(scenes, set(self._band_converter(bands)))
         else:
-            raise Exception('Expected scene list')
+            raise ValueError('Expected scene list')
+
+    @classmethod
+    def parse_sentinel_scene_id(cls, scene_id):
+        splitted = scene_id.split('_')
+
+        try:
+            if len(splitted) > 5:
+                sequence = int(splitted[-1].split('.')[-1]) - 1
+                date = datetime.datetime.strptime(splitted[-4], '%Y%m%dT%H%M%S')
+
+                mgrs = splitted[-2]
+                utm = int(mgrs[1:3])
+                latitude_band = mgrs[3]
+                grid_square = mgrs[4:6]
+            else:
+                sequence = int(splitted[-1])
+                date = datetime.datetime.strptime(splitted[2], '%Y%m%d')
+                pattern = re.compile('(\d+)([A-Z])([A-Z]{2})')
+                mgrs = pattern.match(splitted[3])
+
+                if mgrs:
+                    utm = int(mgrs.group(1))
+                    latitude_band = mgrs.group(2)
+                    grid_square = mgrs.group(3)
+                else:
+                    raise IncorrectSentine2SceneId('Incorrect Scene for Sentinel-2 provided')
+        except ValueError:
+            raise IncorrectSentine2SceneId('Incorrect Scene for Sentinel-2 provided')
+
+        return utm, latitude_band, grid_square, date, sequence
+
+    @classmethod
+    def parse_amazon_s3_tile_path(cls, path):
+        match = re.match(
+            re.compile(
+                r'tiles/(?P<utm>\d{2})/(?P<lat_band>[C-X])/(?P<square>[A-X]{2})/(?P<year>\d{4})/(?P<month>\d{1,2})/(?P<day>\d{1,2})/(?P<seq>\d{1,2})'
+            ),
+            path
+        )
+        if match:
+            date = datetime.date(int(match.group('year')), int(match.group('month')), int(match.group('day')))
+            return match.group('utm'), match.group('lat_band'), match.group('square'), date, match.group('seq')
+
+        raise ValueError('Invalid AWS S3 tile path to parse')
 
     @classmethod
     def scene_interpreter(cls, scene_name):
@@ -74,45 +123,20 @@ class Sentinel2(S3DownloadMixin):
         """
         assert isinstance(scene_name, (str, unicode))
 
-        try:
-            if '/' in scene_name or 'tiles' in scene_name:
-                return scene_name
+        if '/' in scene_name and 'tiles' in scene_name:
+            return scene_name
 
-            splitted = scene_name.split('_')
+        utm, latitude_band, grid_square, date, sequence = cls.parse_sentinel_scene_id(scene_name)
 
-            if len(splitted) > 5:
-                version = int(splitted[-1].split('.')[-1]) - 1
-                date = datetime.datetime.strptime(splitted[-4], '%Y%m%dT%H%M%S')
-
-                mgrs = splitted[-2]
-                utm = int(mgrs[1:3])
-                latitude_band = mgrs[3]
-                grid_square = mgrs[4:6]
-            else:
-                version = int(splitted[-1])
-                date = datetime.datetime.strptime(splitted[2], '%Y%m%d')
-                pattern = re.compile('(\d+)([A-Z])([A-Z]{2})')
-                mgrs = pattern.match(splitted[3])
-
-                if mgrs:
-                    utm = int(mgrs.group(1))
-                    latitude_band = mgrs.group(2)
-                    grid_square = mgrs.group(3)
-                else:
-                    raise IncorrectSentine2SceneId('Incorrect Scene for Sentinel-2 provided')
-
-            return 'tiles/{0}/{1}/{2}/{3}/{4}/{5}/{6}'.format(
-                utm,
-                latitude_band,
-                grid_square,
-                date.year,
-                date.month,
-                date.day,
-                version
-            )
-
-        except ValueError:
-            raise IncorrectSentine2SceneId('Incorrect Scene for Sentinel-2 provided')
+        return 'tiles/{0}/{1}/{2}/{3}/{4}/{5}/{6}'.format(
+            utm,
+            latitude_band,
+            grid_square,
+            date.year,
+            date.month,
+            date.day,
+            sequence
+        )
 
     @classmethod
     def amazon_s3_url(cls, path, band, suffix='B', frmt='jp2'):

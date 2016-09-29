@@ -47,13 +47,25 @@ class Landsat8(S3DownloadMixin):
 
     _DEFAULT_BANDS = {'QA', 'MTL'}
 
-    def __init__(self, download_dir, usgs_user=None, usgs_pass=None):
-        self.download_dir = download_dir
+    def __init__(self, download_dir, usgs_user=None, usgs_pass=None, relative_product_path_builder=None):
+        self._download_dir = download_dir
         self.usgs_user = usgs_user
         self.usgs_pass = usgs_pass
 
+        self._relative_product_path_builder = relative_product_path_builder
+
         # Make sure download directory exist
         check_create_folder(self.download_dir)
+
+    def _relative_product_path(self, sat):
+        if self._relative_product_path_builder:
+            return self._relative_product_path_builder(sat)
+
+        return sat['scene']
+
+    @property
+    def download_dir(self):
+        return self._download_dir
 
     def _band_converter(self, bands=None):
         if bands:
@@ -132,7 +144,7 @@ class Landsat8(S3DownloadMixin):
 
             download_urls = api.download('LANDSAT_8', 'EE', [scene_id], api_key=api_key)
             if download_urls:
-                return self._fetch_scene(scene_id, download_urls[0], bands)
+                return self._fetch_scene(self.scene_interpreter(scene_id), download_urls[0], bands)
             else:
                 raise RemoteFileDoesntExist
 
@@ -152,13 +164,14 @@ class Landsat8(S3DownloadMixin):
         url = self.google_storage_url(sat)
         remote_file_exists(url)
 
-        return self._fetch_scene(scene_id, url, bands)
+        return self._fetch_scene(sat, url, bands)
 
-    def _fetch_scene(self, scene_id, url, bands):
+    def _fetch_scene(self, sat, url, bands):
         with TemporaryDirectory() as temporary_directory:
-            return Scene(scene_id, self._extract_bands(fetch(url, temporary_directory),
-                                                       os.path.join(self.download_dir, scene_id),
-                                                       {self.band_filename(scene_id, band_id) for band_id in bands}))
+            return Scene(sat['scene'], self._extract_bands(
+                fetch(url, temporary_directory),
+                os.path.join(self.download_dir, self._relative_product_path(sat)),
+                {self.band_filename(sat['scene'], band_id) for band_id in bands}))
 
     @classmethod
     def _extract_bands(cls, scene_archive_path, extract_path, band_filenames):

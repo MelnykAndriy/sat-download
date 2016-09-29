@@ -1,3 +1,4 @@
+import abc
 import os
 import logging
 
@@ -82,6 +83,8 @@ class Scenes(object):
 
 class S3DownloadMixin(object):
 
+    __metaclass__ = abc.ABCMeta
+
     def s3(self, scenes, bands):
         """
         Amazon S3 downloader
@@ -107,12 +110,7 @@ class S3DownloadMixin(object):
                 remote_file_exists(url)
                 urls.append(url)
 
-            if '/' in scene:
-                scene_file = scene.replace('/', '_')
-            else:
-                scene_file = scene
-
-            folder = os.path.join(self.download_dir, scene_file)
+            folder = os.path.join(self.download_dir, self._relative_product_path(path))
             # create folder
             check_create_folder(folder)
 
@@ -122,3 +120,21 @@ class S3DownloadMixin(object):
             scene_objs.add_with_files(scene, files)
 
         return scene_objs
+
+    @classmethod
+    @abc.abstractmethod
+    def scene_interpreter(cls, scene_id):
+        pass
+
+    @classmethod
+    @abc.abstractmethod
+    def amazon_s3_url(cls, path, band):
+        pass
+
+    @abc.abstractmethod
+    def _relative_product_path(self, scene_id):
+        pass
+
+    @abc.abstractproperty
+    def download_dir(self):
+        pass
