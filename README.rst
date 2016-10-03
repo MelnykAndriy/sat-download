@@ -16,7 +16,7 @@ Installation
 
 or::
 
-    $ pip install git+git://github.com/sat-utils/sat-download.git@master
+    $ pip install git+git://github.com/MelnykAndriy/sat-download.git@master
 
 
 Tests
