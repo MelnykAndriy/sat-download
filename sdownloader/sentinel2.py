@@ -103,7 +103,7 @@ class Sentinel2(S3DownloadMixin):
     def parse_amazon_s3_tile_path(cls, path):
         match = re.match(
             re.compile(
-                r'tiles/(?P<utm>\d{2})/(?P<lat_band>[C-X])/(?P<square>[A-X]{2})/(?P<year>\d{4})/(?P<month>\d{1,2})/(?P<day>\d{1,2})/(?P<seq>\d{1,2})'
+                r'tiles/(?P<utm>\d{2})/(?P<lat_band>[C-X])/(?P<square>[A-Z]{2})/(?P<year>\d{4})/(?P<month>\d{1,2})/(?P<day>\d{1,2})/(?P<seq>\d{1,2})'
             ),
             path
         )

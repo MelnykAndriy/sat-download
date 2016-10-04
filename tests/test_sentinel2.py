@@ -81,6 +81,10 @@ class Tests(unittest.TestCase):
             ('56', 'W', 'NV', datetime.date(2016, 5, 30), '0'),
             Sentinel2.parse_amazon_s3_tile_path('tiles/56/W/NV/2016/5/30/0')
         )
+        self.assertTupleEqual(
+            ('36', 'U', 'YV', datetime.date(2015, 8, 26), '0'),
+            Sentinel2.parse_amazon_s3_tile_path('tiles/36/U/YV/2015/8/26/0')
+        )
         with self.assertRaises(ValueError):
             Sentinel2.parse_amazon_s3_tile_path('56/W/NV/2016/5/30/0')
 
