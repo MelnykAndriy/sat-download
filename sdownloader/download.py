@@ -115,7 +115,7 @@ class S3DownloadMixin(object):
             check_create_folder(folder)
 
             for url in urls:
-                files.append(fetch(url, folder))
+                files.append(fetch(url, folder, show_progress=self.show_progress))
 
             scene_objs.add_with_files(scene, files)
 

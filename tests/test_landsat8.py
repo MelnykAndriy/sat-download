@@ -105,7 +105,7 @@ class Tests(unittest.TestCase):
             for band_filepath in results[scene].files:
                 self.assertTrue(band_filepath.startswith(self.temp_folder))
 
-    def _landsat_download(self, _, path):
+    def _landsat_download(self, _, path, show_progress=False):
         return path
 
     def _create_landsat_archive(self, path, *args, **kwargs):

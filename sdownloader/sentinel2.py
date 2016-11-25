@@ -25,9 +25,11 @@ class Sentinel2(S3DownloadMixin):
         'swir2': 12
     }
 
-    def __init__(self, download_dir, relative_product_path_builder=None):
+    def __init__(self, download_dir, relative_product_path_builder=None, show_progress=False):
         self._download_dir = download_dir
         self._relative_product_path_builder = relative_product_path_builder
+
+        self.show_progress = show_progress
 
         # Make sure download directory exist
         check_create_folder(self.download_dir)

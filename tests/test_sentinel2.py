@@ -103,6 +103,6 @@ class Tests(unittest.TestCase):
     def _custom_relative_path_builder(self, utm, lat, square, date, seq):
         return os.path.join('test', utm, lat, square, str(date), seq)
 
-    def _fake_fetch(self, url, path):
+    def _fake_fetch(self, url, path, show_progress=False):
         return os.path.join(path, os.path.basename(url))
 

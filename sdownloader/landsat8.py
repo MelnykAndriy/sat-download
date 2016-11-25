@@ -47,12 +47,14 @@ class Landsat8(S3DownloadMixin):
 
     _DEFAULT_BANDS = {'QA', 'MTL'}
 
-    def __init__(self, download_dir, usgs_user=None, usgs_pass=None, relative_product_path_builder=None):
+    def __init__(self, download_dir, usgs_user=None, usgs_pass=None, relative_product_path_builder=None,
+                 show_progress=False):
         self._download_dir = download_dir
+        self._relative_product_path_builder = relative_product_path_builder
+
         self.usgs_user = usgs_user
         self.usgs_pass = usgs_pass
-
-        self._relative_product_path_builder = relative_product_path_builder
+        self.show_progress = show_progress
 
         # Make sure download directory exist
         check_create_folder(self.download_dir)
@@ -169,7 +171,7 @@ class Landsat8(S3DownloadMixin):
     def _fetch_scene(self, sat, url, bands):
         with TemporaryDirectory() as temporary_directory:
             return Scene(sat['scene'], self._extract_bands(
-                fetch(url, temporary_directory),
+                fetch(url, temporary_directory, show_progress=self.show_progress),
                 os.path.join(self.download_dir, self._relative_product_path(sat)),
                 {self.band_filename(sat['scene'], band_id) for band_id in bands}))
 

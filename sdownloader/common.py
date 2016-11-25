@@ -73,7 +73,7 @@ def url_builder(segments):
     return "/".join([remove_slash(s) for s in segments])
 
 
-def fetch(url, path):
+def fetch(url, path, show_progress=False):
     """ Downloads a given url to a give path.
     :param url:
         The url to be downloaded.
@@ -83,6 +83,10 @@ def fetch(url, path):
         The directory path to where the image should be stored
     :type path:
         String
+    :param show_progress:
+        Pass true if you want to observe download progress
+    :type show_progress:
+        bool
     :returns:
         Downloaded file path
     """
@@ -99,7 +103,7 @@ def fetch(url, path):
             logger.info('{0} already exists on your system'.format(filename))
 
     else:
-        download(url, path)
+        download(url, path, show_progress=show_progress)
     logger.info('stored at {0}'.format(path))
 
     return _path.join(path, filename)
