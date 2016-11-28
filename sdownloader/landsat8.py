@@ -171,12 +171,16 @@ class Landsat8(S3DownloadMixin):
     def _fetch_scene(self, sat, url, bands):
         with TemporaryDirectory() as temporary_directory:
             return Scene(sat['scene'], self._extract_bands(
-                fetch(url, temporary_directory, show_progress=self.show_progress),
-                os.path.join(self.download_dir, self._relative_product_path(sat)),
-                {self.band_filename(sat['scene'], band_id) for band_id in bands}))
+                self._fetch_archive(url, temporary_directory),
+                sat, bands))
 
-    @classmethod
-    def _extract_bands(cls, scene_archive_path, extract_path, band_filenames):
+    def _fetch_archive(self, url, fetch_dir):
+        return fetch(url, fetch_dir, show_progress=self.show_progress)
+
+    def _extract_bands(self, scene_archive_path, sat, bands):
+        extract_path = os.path.join(self.download_dir, self._relative_product_path(sat))
+        band_filenames = {self.band_filename(sat['scene'], band_id) for band_id in bands}
+
         extracted = []
         with tarfile.open(scene_archive_path, 'r') as archive:
             for member in archive:
