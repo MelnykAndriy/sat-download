@@ -170,9 +170,10 @@ class Landsat8(S3DownloadMixin):
 
     def _fetch_scene(self, sat, url, bands):
         with TemporaryDirectory() as temporary_directory:
-            return Scene(sat['scene'], self._extract_bands(
-                self._fetch_archive(url, temporary_directory),
-                sat, bands))
+            extracted_bands = self._extract_bands(self._fetch_archive(url, temporary_directory), sat, bands)
+            if len(extracted_bands) != len(bands):
+                raise RemoteFileDoesntExist
+            return Scene(sat['scene'], extracted_bands)
 
     def _fetch_archive(self, url, fetch_dir):
         return fetch(url, fetch_dir, show_progress=self.show_progress)
@@ -182,11 +183,20 @@ class Landsat8(S3DownloadMixin):
         band_filenames = {self.band_filename(sat['scene'], band_id) for band_id in bands}
 
         extracted = []
-        with tarfile.open(scene_archive_path, 'r') as archive:
-            for member in archive:
-                if member.name in band_filenames:
-                    archive.extract(member, extract_path)
-                    extracted.append(os.path.join(extract_path, member.name))
+        with tarfile.open(scene_archive_path, 'r', errorlevel=2) as archive:
+            try:
+                for member in archive:
+                    if member.name in band_filenames:
+                        extracted_path = os.path.join(extract_path, member.name)
+                        try:
+                            archive.extract(member, extract_path)
+                        except EOFError, tarfile.TarError:
+                            if os.path.exists(extracted_path):
+                                os.remove(extracted_path)
+                        else:
+                            extracted.append(extracted_path)
+            except EOFError:
+                pass
 
         return extracted
 
