@@ -1,24 +1,18 @@
 import logging
 import os
-import tarfile
-from xml.etree import ElementTree
-
-from usgs import api, USGSError
 
 from sdownloader.common import url_builder
 from sdownloader.errors import IncorrectLandsat8SceneId
 
 from .download import S3DownloadMixin, Scenes, Scene
-from .common import (check_create_folder,
-                     fetch, remote_file_exists, TemporaryDirectory)
+from .common import check_create_folder, fetch, remote_file_exists
 
-from .errors import RemoteFileDoesntExist, USGSInventoryAccessMissing
+from .errors import RemoteFileDoesntExist
 
 logger = logging.getLogger('sdownloader')
 
-AMAZON_SERVICE = 'amazon'
-GOOGLE_CLOUD_SERVICE = 'gcloud'
-USGS_SERVICE = 'usgs'
+AMAZON_S3_STORAGE = 'amazon'
+GOOGLE_PUBLIC_DATA_STORAGE_SERVICE = 'gcloud'
 
 
 class Landsat8DownloaderException(Exception):
@@ -28,8 +22,9 @@ class Landsat8DownloaderException(Exception):
 class Landsat8(S3DownloadMixin):
     """ Landsat8 downloader class """
 
-    S3_LANDSAT = 'http://landsat-pds.s3.amazonaws.com/'
-    GOOGLE = 'http://storage.googleapis.com/earthengine-public/landsat/'
+    S3_LANDSAT_BASE_URL = 'https://s3-us-west-2.amazonaws.com/landsat-pds/c1/'
+    GOOGLE_BASE_URL = 'https://storage.googleapis.com/gcp-public-data-landsat/'
+    GOOGLE_COLLECTION = '01'
     _BAND_MAP = {
         'coastal': 1,
         'blue': 2,
@@ -45,15 +40,12 @@ class Landsat8(S3DownloadMixin):
         'quality': 'QA'
     }
 
-    _DEFAULT_BANDS = {'QA', 'MTL'}
+    _DEFAULT_BANDS = {'QA', 'MTL', 'ANG'}
 
-    def __init__(self, download_dir, usgs_user=None, usgs_pass=None, relative_product_path_builder=None,
-                 show_progress=False):
+    def __init__(self, download_dir, relative_product_path_builder=None, show_progress=False):
         self._download_dir = download_dir
         self._relative_product_path_builder = relative_product_path_builder
 
-        self.usgs_user = usgs_user
-        self.usgs_pass = usgs_pass
         self.show_progress = show_progress
 
         # Make sure download directory exist
@@ -63,7 +55,7 @@ class Landsat8(S3DownloadMixin):
         if self._relative_product_path_builder:
             return self._relative_product_path_builder(sat)
 
-        return sat['scene']
+        return sat['product_id']
 
     @property
     def download_dir(self):
@@ -74,17 +66,17 @@ class Landsat8(S3DownloadMixin):
             for band_name_or_id in bands:
                 yield self._BAND_MAP[band_name_or_id] if band_name_or_id in self._BAND_MAP else band_name_or_id
 
-    def download(self, scenes, bands=tuple(_BAND_MAP.values()),
-                 service_chain=(AMAZON_SERVICE, GOOGLE_CLOUD_SERVICE, USGS_SERVICE)):
+    def download(self, products, bands=tuple(_BAND_MAP.values()),
+                 service_chain=(AMAZON_S3_STORAGE, GOOGLE_PUBLIC_DATA_STORAGE_SERVICE)):
         """
         Download scenes from Google Storage or Amazon S3 if bands are provided
-        :param scenes:
-            A list of scene IDs
-        :type scenes:
+        :param products:
+            A list of products IDs
+        :type products:
             Iterable
         :param bands:
             A list of bands. Default value is None.
-        :type scenes:
+        :type products:
             List
         :param service_chain:
             A list of service designators to be used for images downloading.
@@ -94,22 +86,19 @@ class Landsat8(S3DownloadMixin):
         :returns:
             (List) includes downloaded scenes as key and source as value (aws or google)
         """
-        if isinstance(scenes, list):
+        if isinstance(products, list):
             scene_objs = Scenes()
 
-            # Always grab MTL.txt and QA band if bands are specified
             bands = self._DEFAULT_BANDS.union(self._band_converter(bands))
 
-            for scene_id in scenes:
+            for product_id in products:
 
                 for service_designator in service_chain:
                     try:
-                        if service_designator == AMAZON_SERVICE:
-                            scene_objs.merge(self.s3([scene_id], bands))
-                        elif service_designator == GOOGLE_CLOUD_SERVICE:
-                            scene_objs.add(self._google(scene_id, bands))
-                        elif service_designator == USGS_SERVICE:
-                            scene_objs.add(self._usgs(scene_id, bands))
+                        if service_designator == AMAZON_S3_STORAGE:
+                            scene_objs.merge(self.s3([product_id], bands))
+                        elif service_designator == GOOGLE_PUBLIC_DATA_STORAGE_SERVICE:
+                            scene_objs.add(self._google(product_id, bands))
                         else:
                             raise Landsat8DownloaderException(
                                 '{} - service designator is not supported'.format(service_designator)
@@ -124,81 +113,33 @@ class Landsat8(S3DownloadMixin):
 
         raise ValueError('Expected sceneIDs list')
 
-    def _usgs(self, scene_id, bands):
-        """
-        Downloads the image from USGS
-        :param scene_id:
-            A collection of scene IDs
-        :type scene_id:
-            Iterable
-        :returns
-            Downloaded scenes wrapper
-        """
-
-        # download from usgs if login information is provided
-        if self.usgs_user and self.usgs_pass:
-            try:
-                api_key = api.login(self.usgs_user, self.usgs_pass)
-            except USGSError as e:
-                error_tree = ElementTree.fromstring(str(e.message))
-                error_text = error_tree.find("SOAP-ENV:Body/SOAP-ENV:Fault/faultstring", api.NAMESPACES).text
-                raise USGSInventoryAccessMissing(error_text)
-
-            download_urls = api.download('LANDSAT_8', 'EE', [scene_id], api_key=api_key)
-            if download_urls:
-                return self._fetch_scene(self.scene_interpreter(scene_id), download_urls[0], bands)
-            else:
-                raise RemoteFileDoesntExist
-
-        raise Landsat8DownloaderException('USGS username and/or password are not provided')
-
-    def _google(self, scene_id, bands):
+    def _google(self, product_id, bands):
         """
         Google Storage Downloader.
-        :param scene_id:
-            Landsat scene ID
-        :type scene_id:
+        :param product_id:
+            Landsat product ID
+        :type product_id:
             str
         :returns:
             Downloaded scenes wrapper
         """
-        sat = self.scene_interpreter(scene_id)
-        url = self.google_storage_url(sat)
-        remote_file_exists(url)
+        sat = self.scene_interpreter(product_id)
 
-        return self._fetch_scene(sat, url, bands)
+        urls = []
 
-    def _fetch_scene(self, sat, url, bands):
-        with TemporaryDirectory() as temporary_directory:
-            extracted_bands = self._extract_bands(self._fetch_archive(url, temporary_directory), sat, bands)
-            if len(extracted_bands) != len(bands):
-                raise RemoteFileDoesntExist
-            return Scene(sat['scene'], extracted_bands)
+        for band in bands:
+            # get url for the band
+            url = self.google_storage_url(sat, band)
 
-    def _fetch_archive(self, url, fetch_dir):
-        return fetch(url, fetch_dir, show_progress=self.show_progress)
+            # make sure it exist
+            remote_file_exists(url)
+            urls.append(url)
 
-    def _extract_bands(self, scene_archive_path, sat, bands):
-        extract_path = os.path.join(self.download_dir, self._relative_product_path(sat))
-        band_filenames = {self.band_filename(sat['scene'], band_id) for band_id in bands}
+        folder = os.path.join(self.download_dir, self._relative_product_path(sat))
+        # create folder
+        check_create_folder(folder)
 
-        extracted = []
-        with tarfile.open(scene_archive_path, 'r', errorlevel=2) as archive:
-            try:
-                for member in archive:
-                    if member.name in band_filenames:
-                        extracted_path = os.path.join(extract_path, member.name)
-                        try:
-                            archive.extract(member, extract_path)
-                        except EOFError, tarfile.TarError:
-                            if os.path.exists(extracted_path):
-                                os.remove(extracted_path)
-                        else:
-                            extracted.append(extracted_path)
-            except EOFError:
-                pass
-
-        return extracted
+        return Scene(sat['product_id'], [fetch(url, folder, show_progress=self.show_progress) for url in urls])
 
     @classmethod
     def amazon_s3_url(cls, sat, band_id):
@@ -213,68 +154,68 @@ class Landsat8(S3DownloadMixin):
         :returns:
             (String) The URL to a S3 file
         """
-        filename = cls.band_filename(sat['scene'], band_id)
-        return url_builder([cls.S3_LANDSAT, sat['sat'], sat['path'], sat['row'], sat['scene'], filename])
+        filename = cls.band_filename(sat['product_id'], band_id)
+        return url_builder(
+            [cls.S3_LANDSAT_BASE_URL, 'L' + sat['landsat_number'], sat['path'], sat['row'], sat['product_id'], filename]
+        )
 
     @classmethod
-    def band_filename(cls, scene_id, band_id):
-        """
-
-        :param scene_id:
-        :param band_id:
-        :return:
-        """
-        if band_id == 'MTL':
-            return '{}_{}.txt'.format(scene_id, band_id)
-        elif band_id in cls._BAND_MAP.values():
-            return '{}_B{}.TIF'.format(scene_id, band_id)
-        else:
-            raise IncorrectLandsat8SceneId('Provided band id is not correct')
-
-    @classmethod
-    def google_storage_url(cls, sat):
+    def google_storage_url(cls, sat, band_id):
         """
         Returns a google storage url for a landsat8 scene.
         :param sat:
             Expects an object created by landsat_scene_interpreter function
         :type sat:
             dict
+        :param band_id:
+
         :returns:
             (String) The URL to a google storage file
         """
-        filename = sat['scene'] + '.tar.bz'
-        return url_builder([cls.GOOGLE, sat['sat'], sat['path'], sat['row'], filename])
+        return url_builder(
+            [
+                cls.GOOGLE_BASE_URL,
+                'L{}0{}'.format(sat['sensor'], sat['landsat_number']),
+                cls.GOOGLE_COLLECTION,
+                sat['path'],
+                sat['row'],
+                sat['product_id'],
+                cls.band_filename(sat['product_id'], band_id)
+            ]
+        )
 
     @classmethod
-    def scene_interpreter(cls, scene_name):
+    def band_filename(cls, product_id, band_id):
+        """
+
+        :param product_id:
+        :param band_id:
+        :return:
+        """
+        if band_id in ['MTL', 'ANG']:
+            return '{}_{}.txt'.format(product_id, band_id)
+        elif band_id in cls._BAND_MAP.values():
+            return '{}_B{}.TIF'.format(product_id, band_id)
+        else:
+            raise IncorrectLandsat8SceneId('Provided band id is not correct')
+
+    @classmethod
+    def scene_interpreter(cls, product_id):
         """ Retrieve row, path and date from Landsat-8 sceneID.
-        :param scene_name:
-            The scene ID.
-        :type scene_name:
+        :param product_id:
+            The product ID.
+        :type product_id:
             String
         :returns:
             dict
-        :Example output:
-        >>> anatomy = {
-                'path': None,
-                'row': None,
-                'sat': None,
-                'scene': scene
-            }
         """
-
-        anatomy = {
-            'path': None,
-            'row': None,
-            'sat': None,
-            'scene': scene_name
-        }
-
-        if isinstance(scene_name, (str, unicode)) and len(scene_name) == 21:
-            anatomy['path'] = scene_name[3:6]
-            anatomy['row'] = scene_name[6:9]
-            anatomy['sat'] = 'L' + scene_name[2:3]
-
-            return anatomy
+        if isinstance(product_id, (str, unicode)) and len(product_id) == 40:
+            return dict(
+                path=product_id[10:13],
+                row=product_id[13:16],
+                landsat_number=product_id[3:4],
+                sensor=product_id[1:2],
+                product_id=product_id
+            )
         else:
             raise IncorrectLandsat8SceneId('Received incorrect scene')

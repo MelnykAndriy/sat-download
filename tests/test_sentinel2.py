@@ -8,6 +8,7 @@ import datetime
 import mock
 
 from sdownloader.download import Scenes
+from sdownloader.errors import IncorrectSentine2SceneId
 from sdownloader.sentinel2 import Sentinel2
 
 
@@ -106,3 +107,30 @@ class Tests(unittest.TestCase):
     def _fake_fetch(self, url, path, show_progress=False):
         return os.path.join(path, os.path.basename(url))
 
+    def test_amazon_s3_url_sentinel2(self):
+        scene = 'S2A_OPER_MSI_L1C_TL_SGS__20160325T150955_A003951_T34RCS_N02.01'
+        path = Sentinel2.scene_interpreter(scene)
+        string = Sentinel2.amazon_s3_url(path, 11)
+        expect = 'tiles/34/R/CS/2016/3/25/0/B11.jp2'
+        assert expect in string
+
+    def test_scene_interpreter_success(self):
+        scene = 'S2A_OPER_MSI_L1C_TL_SGS__20160325T150955_A003951_T34RCS_N02.01'
+        output = Sentinel2.scene_interpreter(scene)
+        expect = 'tiles/34/R/CS/2016/3/25/0'
+        self.assertEqual(output, expect)
+
+        scene = 'S2A_OPER_MSI_L1C_TL_SGS__20160325T150955_A003951_T34RCS_N02.01'
+        output = Sentinel2.scene_interpreter(scene)
+        expect = 'tiles/34/R/CS/2016/3/25/0'
+        self.assertEqual(output, expect)
+
+        scene = 'S2A_tile_20160526_1VCH_0'
+        output = Sentinel2.scene_interpreter(scene)
+        expect = 'tiles/1/V/CH/2016/5/26/0'
+        self.assertEqual(output, expect)
+
+    def test_scene_interpreter_fail(self):
+        with self.assertRaises(IncorrectSentine2SceneId):
+            scene = 'S2A_OPER_MSI_L1C_TL_SGS__20160325T150955_A003951_T34RCS_N02.what'
+            Sentinel2.scene_interpreter(scene)

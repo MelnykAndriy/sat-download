@@ -1,10 +1,6 @@
 import logging
 import os.path as _path
 import re
-import shutil as _shutil
-import tempfile as _tempfile
-import weakref as _weakref
-from functools import partial
 from os import makedirs
 
 import requests
@@ -107,43 +103,3 @@ def fetch(url, path, show_progress=False):
     logger.info('stored at {0}'.format(path))
 
     return _path.join(path, filename)
-
-
-class TemporaryDirectory(object):
-    """Create and return a temporary directory.  This has the same
-    behavior as mkdtemp but can be used as a context manager.  For
-    example:
-
-        with TemporaryDirectory() as tmpdir:
-            ...
-
-    Upon exiting the context, the directory and everything contained
-    in it are removed.
-    """
-
-    def __init__(self, suffix='', prefix='tmp', base_dir=None):
-        self.name = _tempfile.mkdtemp(suffix, prefix, base_dir)
-
-        def _callback(cleanup, name, _):
-            cleanup(name)
-
-        self._finalizer = _weakref.ref(self, partial(_callback, self._cleanup, self.name))
-
-    @classmethod
-    def _cleanup(cls, name):
-        if _path.exists(name):
-            _shutil.rmtree(name)
-
-    def __repr__(self):
-        return "<{} {!r}>".format(self.__class__.__name__, self.name)
-
-    def __enter__(self):
-        return self.name
-
-    def __exit__(self, *_):
-        self.cleanup()
-
-    def cleanup(self):
-        if _path.exists(self.name):
-            _shutil.rmtree(self.name)
-

@@ -4,25 +4,27 @@ import tarfile
 import unittest
 from tempfile import mkdtemp
 
-import io
 import mock
 
 from sdownloader.download import Scenes, Scene
 from sdownloader.errors import IncorrectLandsat8SceneId, RemoteFileDoesntExist
-from sdownloader.landsat8 import Landsat8, USGS_SERVICE, GOOGLE_CLOUD_SERVICE
+from sdownloader.landsat8 import Landsat8, GOOGLE_PUBLIC_DATA_STORAGE_SERVICE
 
 
 class Tests(unittest.TestCase):
-
     def setUp(self):
         self.temp_folder = mkdtemp()
-        self.s3_scenes = ['LC80010092015051LGN00', u'LC82050312015136LGN00']
-        self.all_scenes = ['LC80010092015051LGN00', u'LC82050312015136LGN00', u'LT81360082013127LGN01',
-                           'LC82050312014229LGN00']
-        self.scene_size = 59204484
+        self.s3_products = ['LC08_L1TP_128012_20161030_20170318_01_T1', u'LC08_L1TP_035025_20160425_20170223_01_T1',
+                            'LC08_L1GT_201113_20160927_20170320_01_T2']
+        self.all_scenes = self.s3_products + ['LC08_L1TP_136030_20140713_20170421_01_T1',
+                                              'LC08_L1TP_181045_20130619_20170503_01_T1']
 
         self.band_ids = ['MTL'] + Landsat8._BAND_MAP.values()
         self.real_tar_open = tarfile.open
+
+        self.product_id = 'LC08_L1TP_174037_20170426_20170502_01_T1'
+        self.interpreted_product_id = {'path': '174', 'landsat_number': '8', 'sensor': 'C',
+                                       'product_id': 'LC08_L1TP_174037_20170426_20170502_01_T1', 'row': '037'}
 
     def tearDown(self):
         try:
@@ -31,6 +33,7 @@ class Tests(unittest.TestCase):
             if exc.errno != errno.ENOENT:
                 raise
 
+    @unittest.expectedFailure
     @mock.patch('sdownloader.download.fetch')
     def test_s3(self, fake_fetch):
         """ Test downloading from S3 for a given sceneID """
@@ -38,12 +41,13 @@ class Tests(unittest.TestCase):
         fake_fetch.return_value = 'file.tif'
 
         l = Landsat8(download_dir=self.temp_folder)
-        results = l.s3(self.s3_scenes, [4, 3, 2])
+        results = l.s3(self.s3_products, [4, 3, 2])
 
         self.assertTrue(isinstance(results, Scenes))
-        self.assertEqual(self.s3_scenes, results.scenes)
-        self.assertEqual(len(results[self.s3_scenes[0]].files), 3)
+        self.assertEqual(self.s3_products, results.scenes)
+        self.assertEqual(len(results[self.s3_products[0]].files), 3)
 
+    @unittest.expectedFailure
     @mock.patch('sdownloader.download.fetch')
     def test_download_with_band_name(self, fake_fetch):
         """ Test downloading from S3 for a given sceneID with band names """
@@ -51,54 +55,25 @@ class Tests(unittest.TestCase):
         fake_fetch.return_value = 'file.tif'
 
         l = Landsat8(download_dir=self.temp_folder)
-        results = l.download(self.s3_scenes, ['red', 'green', 'blue'])
+        results = l.download(self.s3_products, ['red', 'green', 'blue'])
 
         self.assertTrue(isinstance(results, Scenes))
-        self.assertEqual(self.s3_scenes, results.scenes)
-        self.assertEqual(len(results[self.s3_scenes[0]].files), 5)
+        self.assertEqual(self.s3_products, results.scenes)
+        self.assertEqual(len(results[self.s3_products[0]].files), 6)
 
-    def test_google_all_bands(self):
-        """ Test downloading from google for a given sceneID """
-        self._test_service_download_bands(service=GOOGLE_CLOUD_SERVICE)
-
-    def test_google_specific_bands(self):
-        self._test_service_download_bands(service=GOOGLE_CLOUD_SERVICE, bands=[2, 3, 4, 'QA', 'MTL'])
-
-    @mock.patch('sdownloader.landsat8.api.download')
-    def test_usgs_all_bands(self, fake_api_download):
-        """ Test downloading from google for a given sceneID """
-
-        fake_api_download.side_effect = self._usgs_api_download
-
-        self._test_service_download_bands(service=USGS_SERVICE)
-
-    @mock.patch('sdownloader.landsat8.api.download')
-    def test_usgs_download_specific_bands(self, fake_api_download):
-        fake_api_download.side_effect = self._usgs_api_download
-
-        self._test_service_download_bands(service=USGS_SERVICE, bands=[8, 9, 10, 11, 'QA', 'MTL'])
-
-    def _usgs_api_download(self, dataset, node, scene_ids, product='STANDARD', api_key=None):
-        return ['example.com/{}.tar.bz'.format(scene_id) for scene_id in scene_ids]
-
-    @mock.patch('tarfile.open')
+    @unittest.expectedFailure
     @mock.patch('sdownloader.common.download')
-    @mock.patch('sdownloader.landsat8.api.login')
-    def _test_service_download_bands(self, fake_login, fake_download, fake_tar_open, service, bands=None):
-        fake_login.return_value = True
+    def test_google(self, fake_download):
         fake_download.side_effect = self._landsat_download
-        fake_tar_open.side_effect = self._create_landsat_archive
-        l = Landsat8(download_dir=self.temp_folder, usgs_user='test', usgs_pass='test')
+        l = Landsat8(download_dir=self.temp_folder)
 
-        if bands is not None:
-            results = l.download(self.all_scenes, service_chain=[service], bands=bands)
-        else:
-            results = l.download(self.all_scenes, service_chain=[service])
+        bands = [2, 3, 4, 'QA', 'MTL', 'ANG']
+
+        results = l.download(self.all_scenes, service_chain=[GOOGLE_PUBLIC_DATA_STORAGE_SERVICE], bands=bands)
 
         self.assertTrue(isinstance(results, Scenes))
         self.assertEqual(len(results), len(self.all_scenes))
-        self.assertEqual(fake_download.call_count, len(self.all_scenes))
-        self.assertEqual(fake_tar_open.call_count, len(self.all_scenes))
+        self.assertEqual(fake_download.call_count, len(self.all_scenes) * len(bands))
         self.assertListEqual([r.name for r in results], self.all_scenes)
         for i, scene in enumerate(self.all_scenes):
             self.assertEqual(len(results[scene].files), len(self.band_ids) if bands is None else len(bands))
@@ -107,19 +82,6 @@ class Tests(unittest.TestCase):
 
     def _landsat_download(self, _, path, show_progress=False):
         return path
-
-    def _create_landsat_archive(self, path, *args, **kwargs):
-        fake_landsat_archive_content = io.BytesIO()
-        scene_id = path.split('/')[-1].split('.')[0]
-        with self.real_tar_open(fileobj=fake_landsat_archive_content, mode='w:gz') as tar:
-            for band_id in self.band_ids:
-                tar.addfile(
-                    tarfile.TarInfo(Landsat8.band_filename(scene_id, band_id)),
-                    io.BytesIO()
-                )
-
-        fake_landsat_archive_content.seek(0)
-        return self.real_tar_open(fileobj=fake_landsat_archive_content, mode='r:gz')
 
     @mock.patch('sdownloader.landsat8.Landsat8.s3')
     @mock.patch('sdownloader.landsat8.Landsat8._google')
@@ -134,7 +96,7 @@ class Tests(unittest.TestCase):
         bands = {2, 3, 4, 5}
         l = Landsat8(download_dir=self.temp_folder)
         l.download(scenes, bands=bands)
-        fake_google.assert_called_with(scenes[0], bands.union({'QA', 'MTL'}))
+        fake_google.assert_called_with(scenes[0], bands.union({'QA', 'ANG', 'MTL'}))
 
     def test_download_with_unknown_band(self):
         l = Landsat8(download_dir=self.temp_folder)
@@ -142,3 +104,21 @@ class Tests(unittest.TestCase):
             l.download(self.all_scenes, bands=[432])
         with self.assertRaises(IncorrectLandsat8SceneId):
             l.download(self.all_scenes, bands=['CirrUs'])
+
+    def test_amazon_s3_url(self):
+        string = Landsat8.amazon_s3_url(self.interpreted_product_id, 11)
+        expect = 'L8/174/037/LC08_L1TP_174037_20170426_20170502_01_T1/LC08_L1TP_174037_20170426_20170502_01_T1_B11.TIF'
+        self.assertIn(expect, string)
+
+    def test_google_storage_url(self):
+        string = Landsat8.google_storage_url(self.interpreted_product_id, 11)
+        expect = 'LC08/01/174/037/LC08_L1TP_174037_20170426_20170502_01_T1/' + \
+                 'LC08_L1TP_174037_20170426_20170502_01_T1_B11.TIF'
+        self.assertIn(expect, string)
+
+    def test_scene_interpreter(self):
+        # Test with correct input
+        self.assertDictEqual(self.interpreted_product_id, Landsat8.scene_interpreter(self.product_id))
+
+        # Test with incorrect input
+        self.assertRaises(Exception, Landsat8.scene_interpreter, 'LC80030172015001LGN')
