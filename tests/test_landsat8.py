@@ -14,8 +14,7 @@ from sdownloader.landsat8 import Landsat8, GOOGLE_PUBLIC_DATA_STORAGE_SERVICE
 class Tests(unittest.TestCase):
     def setUp(self):
         self.temp_folder = mkdtemp()
-        self.s3_products = ['LC08_L1TP_128012_20161030_20170318_01_T1', u'LC08_L1TP_035025_20160425_20170223_01_T1',
-                            'LC08_L1GT_201113_20160927_20170320_01_T2']
+        self.s3_products = ['LC08_L1TP_012019_20170411_20170415_01_T1', u'LC08_L1TP_012029_20170411_20170415_01_T1']
         self.all_scenes = self.s3_products + ['LC08_L1TP_136030_20140713_20170421_01_T1',
                                               'LC08_L1TP_181045_20130619_20170503_01_T1']
 
@@ -33,7 +32,6 @@ class Tests(unittest.TestCase):
             if exc.errno != errno.ENOENT:
                 raise
 
-    @unittest.expectedFailure
     @mock.patch('sdownloader.download.fetch')
     def test_s3(self, fake_fetch):
         """ Test downloading from S3 for a given sceneID """
@@ -47,7 +45,6 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.s3_products, results.scenes)
         self.assertEqual(len(results[self.s3_products[0]].files), 3)
 
-    @unittest.expectedFailure
     @mock.patch('sdownloader.download.fetch')
     def test_download_with_band_name(self, fake_fetch):
         """ Test downloading from S3 for a given sceneID with band names """
@@ -61,7 +58,6 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.s3_products, results.scenes)
         self.assertEqual(len(results[self.s3_products[0]].files), 6)
 
-    @unittest.expectedFailure
     @mock.patch('sdownloader.common.download')
     def test_google(self, fake_download):
         fake_download.side_effect = self._landsat_download
